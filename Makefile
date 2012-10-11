@@ -24,7 +24,7 @@ test_gingerbread: libhybris_gingerbread.so.1 test.c
 	$(CC) -g -o $@ -ldl test.c $<
 
 libEGL.so.1.0: egl/egl.c libhybris_gingerbread.so.1 libhardware.so.1
-	$(CC) -g -shared -Iinclude -o $@ -fPIC -Wl,-soname,libEGL.so.1 $< libhybris_gingerbread.so.1 libhardware.so.1
+	$(CC) -g -shared -Iinclude -o $@ -fPIC -Wl,-soname,libEGL.so.1 $< libhybris_gingerbread.so.1
 
 libhardware.so.1: hardware/hardware.c libhybris_gingerbread.so.1
 	$(CC) -g -shared -Iinclude -o $@ -fPIC -Wl,-soname,libhardware.so.1 $< libhybris_gingerbread.so.1
@@ -32,8 +32,8 @@ libhardware.so.1: hardware/hardware.c libhybris_gingerbread.so.1
 libEGL.so.1: libEGL.so.1.0
 	ln -sf libEGL.so.1.0 libEGL.so.1
 
-test_egl: libEGL.so.1 egl/test.c egl/dummy_native_window.c libhybris_gingerbread.so.1
-	$(CC) -g -Iinclude -o $@ libEGL.so.1 libhybris_gingerbread.so.1 egl/test.c egl/dummy_native_window.c
+test_egl: libEGL.so.1 egl/test.c egl/dummy_native_window.c libhybris_gingerbread.so.1 libhardware.so.1
+	$(CC) -g -Iinclude -o $@ libEGL.so.1 libhybris_gingerbread.so.1 libhardware.so.1 egl/test.c egl/dummy_native_window.c
  
 libGLESv2.so.2.0: glesv2/gl2.c libhybris_gingerbread.so.1
 	$(CC) -g -shared -Iinclude -o $@ -fPIC -Wl,-soname,libGLESv2.so.2 $< libhybris_gingerbread.so.1
@@ -45,4 +45,4 @@ test_glesv2: libEGL.so.1 libGLESv2.so.2 egl/test.c libhybris_gingerbread.so.1
 	$(CC) -g -Iinclude -o $@ -lm libEGL.so.1 libhybris_gingerbread.so.1 libGLESv2.so.2 glesv2/test.c
 
 clean:
-	rm -rf libhybris_gingerbread.so test_gingerbread
+	rm -rf libhybris_gingerbread.so test_gingerbread lib*.so*
