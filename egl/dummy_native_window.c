@@ -28,9 +28,30 @@ int _window_setSwapInterval(struct ANativeWindow* window, int interval)
     return 0;
 }
 
-int _window_dequeueBuffer(struct ANativeWindow* window, void** buffer)
+int _window_dequeueBuffer(ANativeWindow* window, ANativeWindowBuffer_t** buffer)
 {
-    printf("dummy_native_window_dequeueBuffer\n");
+    struct dummy_native_window *self;
+    int index;
+
+    self = container_of(window, struct dummy_native_window, native);
+
+    index = self->buffer_head;
+    if (self->buffer_head >= self->num_buffers)
+        self->buffer_head = 0;
+
+    /* FIXME maybe we should wait here until a bufer is free instead of failing here */
+    if (!self->num_free_buffers) {
+        *buffer = NULL;
+        return -1;
+    }
+
+    self->num_free_buffers--;
+    self->current_buffer_index = index;
+
+    *buffer = self->buffers[index];
+
+    printf("leaving _window_dequeueBuffer\n");
+
     return 0;
 }
 
@@ -42,7 +63,7 @@ int _window_lockBuffer(struct ANativeWindow* window, void* buffer)
 
 int _window_queueBuffer(struct ANativeWindow* window, void* buffer)
 {
-    printf("dummy_native_window_queueBuffer\n");
+    printf("_window_queueBuffer\n");
     return 0;
 }
 
@@ -99,7 +120,13 @@ int _window_cancelBuffer(struct ANativeWindow* window, void* buffer)
 struct dummy_native_window *dummy_native_window_create(void)
 {
     struct dummy_native_window *window;
-    int i;
+    hw_module_t const* module;
+    int i, err;
+
+    if (hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &module) < 0) {
+        printf("ERROR: failed to initialize gralloc module\n");
+        return NULL;
+    }
 
     window = (struct dummy_native_window*) malloc(sizeof(struct dummy_native_window));
 
@@ -126,13 +153,43 @@ struct dummy_native_window *dummy_native_window_create(void)
     window->num_buffers = NUM_FRAME_BUFFERS;
     window->num_free_buffers = NUM_FRAME_BUFFERS;
     window->buffer_head = window->num_buffers - 1;
+    window->current_buffer_index = window->buffer_head;
+
+    printf("before gralloc init\n");
+    /* initial gralloc for buffer allocation */
+    err = gralloc_open(module, &window->gr_dev);
+    if (err != 0) {
+        free(window);
+        printf("ERROR: couldn't open gralloc HAL (%s)\n", strerror(-err));
+        return NULL;
+    }
+    printf("after gralloc init\n");
 
     /* initialize our buffers with correct settings */
     for (i = 0; i < window->num_buffers; i++) {
-        window->buffers[i].width = FRAMEBUFFER_WIDTH;
-        window->buffers[i].height = FRAMEBUFFER_HEIGHT;
-        window->buffers[i].format = FRAMEBUFFER_FORMAT;
-        window->buffers[i].usage = GRALLOC_USAGE_HW_FB;
+        window->buffers[i] = (ANativeWindowBuffer_t*) malloc(sizeof(ANativeWindowBuffer_t));
+        window->buffers[i]->width = FRAMEBUFFER_WIDTH;
+        window->buffers[i]->height = FRAMEBUFFER_HEIGHT;
+        window->buffers[i]->format = FRAMEBUFFER_FORMAT;
+        window->buffers[i]->usage = GRALLOC_USAGE_HW_TEXTURE;
+
+        err = window->gr_dev->alloc(window->gr_dev,
+                                    FRAMEBUFFER_WIDTH,
+                                    FRAMEBUFFER_HEIGHT,
+                                    FRAMEBUFFER_FORMAT,
+                                    GRALLOC_USAGE_HW_TEXTURE,
+                                    &window->buffers[i]->handle,
+                                    &window->buffers[i]->stride);
+        if (err != 0) {
+            printf("ERROR: buffer %d allocation failed w=%d, h=%d, err=%s\n",
+                   i, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, strerror(-err));
+            window->num_buffers = i;
+            window->num_free_buffers = i;
+            window->buffer_head = window->num_buffers - 1;
+            break;
+        }
+
+        printf("INFO: allocated buffer with id %i\n", i);
     }
 
     return window;
@@ -140,8 +197,21 @@ struct dummy_native_window *dummy_native_window_create(void)
 
 void dummy_native_window_free(struct dummy_native_window *window)
 {
+    int i;
+
     if (window == 0)
         return;
+
+    if (window->gr_dev != 0) {
+        for (i = 0; window->num_buffers; i++) {
+            if (window->buffers[i] != NULL) {
+                window->gr_dev->free(window->gr_dev, window->buffers[i]->handle);
+                free(window->buffers[i]);
+            }
+        }
+
+        gralloc_close(window->gr_dev);
+    }
 
     free(window);
 }

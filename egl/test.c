@@ -36,12 +36,12 @@ int main(int argc, char **argv)
 
     printf("INFO: Initialized display with default configuration\n");
 
-    // ANativeWindow *window = android_create_native_window();
-    printf("INFO: Created dummy native window\n");
-
     struct dummy_native_window *window;
-
     window = dummy_native_window_create();
+    if (window == NULL)
+        return -1;
+
+    printf("INFO: Created dummy native window\n");
 
     surface = eglCreateWindowSurface((EGLDisplay) display, ecfg, (EGLNativeWindowType) &window->native, NULL);
     assert(surface != EGL_NO_SURFACE);
