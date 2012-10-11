@@ -3,6 +3,8 @@
 #include "dummy_native_window.h"
 #include "support.h"
 
+#include <hardware/gralloc.h>
+
 #define NO_ERROR                0L
 #define BAD_VALUE               -1
 
@@ -97,6 +99,7 @@ int _window_cancelBuffer(struct ANativeWindow* window, void* buffer)
 struct dummy_native_window *dummy_native_window_create(void)
 {
     struct dummy_native_window *window;
+    int i;
 
     window = (struct dummy_native_window*) malloc(sizeof(struct dummy_native_window));
 
