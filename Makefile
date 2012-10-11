@@ -29,8 +29,8 @@ libEGL.so.1.0: egl/egl.c libhybris_gingerbread.so.1
 libEGL.so.1: libEGL.so.1.0
 	ln -sf libEGL.so.1.0 libEGL.so.1
 
-test_egl: libEGL.so.1 egl/test.c libhybris_gingerbread.so.1
-	$(CC) -g -Iinclude -o $@ libEGL.so.1 libhybris_gingerbread.so.1 egl/test.c
+test_egl: libEGL.so.1 egl/test.c egl/dummy_native_window.c libhybris_gingerbread.so.1
+	$(CC) -g -Iinclude -o $@ libEGL.so.1 libhybris_gingerbread.so.1 egl/test.c egl/dummy_native_window.c
  
 libGLESv2.so.2.0: glesv2/gl2.c libhybris_gingerbread.so.1
 	$(CC) -g -shared -Iinclude -o $@ -fPIC -Wl,-soname,libGLESv2.so.2 $< libhybris_gingerbread.so.1
