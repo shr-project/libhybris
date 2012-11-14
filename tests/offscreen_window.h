@@ -8,24 +8,26 @@
 class OffscreenNativeWindowBuffer : public BaseNativeWindowBuffer
 {
     friend class OffscreenNativeWindow;
-    protected:
+public:
+    OffscreenNativeWindowBuffer(char* buf);
+    void lock(int usage);
+    void unlock();
+protected:
     OffscreenNativeWindowBuffer(unsigned int width,
                             unsigned int height,
                             unsigned int format,
-                            unsigned int usage) {
-        // Base members
-        ANativeWindowBuffer::width = width;
-        ANativeWindowBuffer::height = height;
-        ANativeWindowBuffer::format = format;
-        ANativeWindowBuffer::usage = usage;
-    };
+                            unsigned int usage);
+    virtual int serialize(char* to);
+    virtual int deserialize(char* from);
+    alloc_device_t* m_alloc;
+    const gralloc_module_t* m_gralloc;
     void* vaddr;
 };
 
 class OffscreenNativeWindow : public BaseNativeWindow
 {
 public:
-    OffscreenNativeWindow(unsigned int width, unsigned int height, unsigned int format = 5);
+    OffscreenNativeWindow(int pipe_read, int pipe_write, unsigned int width, unsigned int height, unsigned int format = 5);
     ~OffscreenNativeWindow();
     OffscreenNativeWindowBuffer* getFrontBuffer();
 protected:
@@ -57,9 +59,9 @@ private:
     unsigned int m_defaultHeight;
     unsigned int m_usage;
     OffscreenNativeWindowBuffer* m_buffers[NUM_BUFFERS];
-    alloc_device_t* m_alloc;
-    const gralloc_module_t* m_gralloc;
 
+    int m_pipeWrite;
+    int m_pipeRead;
 };
 
 #endif

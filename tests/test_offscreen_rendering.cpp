@@ -8,17 +8,23 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "fbdev_window.h"
 #include "offscreen_window.h"
+
 PFNEGLCREATEIMAGEKHRPROC eglCreateImageKHR=0;
 PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR=0;
 PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES=0;
 
 static void checkGlError(const char* op) {
+    bool doabort=false;
     for (GLint error = glGetError(); error; error
             = glGetError()) {
         fprintf(stderr, "after %s() glError (0x%x)\n", op, error);
+        doabort=true;
     }
+    if(doabort) abort();
+
 }
 
 static const char gVertexShader[] = 
@@ -124,7 +130,10 @@ const GLfloat gTriangleVertices[] = {
 
 class EGLClient {
 public:
-    EGLClient() {
+    EGLClient(int pipe_read, int pipe_write)
+        : pipe_read(pipe_read)
+        , pipe_write(pipe_write)
+        , frame(0) {
         EGLConfig ecfg;
         EGLint num_config;
         EGLint attr[] = {       // some attributes to set up our egl-interface
@@ -139,38 +148,38 @@ public:
         };
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         if (display == EGL_NO_DISPLAY) {
-            printf("ERROR: Could not get default display\n");
+            printf("CLIENT: ERROR: Could not get default display\n");
             return;
         }
 
-        printf("INFO: Successfully retrieved default display!\n");
+        printf("CLIENT: INFO: Successfully retrieved default display!\n");
 
         eglInitialize(display, 0, 0);
         eglChooseConfig((EGLDisplay) display, attr, &ecfg, 1, &num_config);
 
-        printf("INFO: Initialized display with default configuration\n");
+        printf("CLIENT: INFO: Initialized display with default configuration\n");
 
-        window = new OffscreenNativeWindow(720, 1280);
-        printf("INFO: Created native window %p\n", window);
-        printf("creating window surface...\n");
+        window = new OffscreenNativeWindow(pipe_read, pipe_write, 720, 1280);
+        printf("CLIENT: INFO: Created native window %p\n", window);
+        printf("CLIENT: creating window surface...\n");
         surface = eglCreateWindowSurface((EGLDisplay) display, ecfg, *window, NULL);
         assert(surface != EGL_NO_SURFACE);
-        printf("INFO: Created our main window surface %p\n", surface);
+        printf("CLIENT: INFO: Created our main window surface %p\n", surface);
         context = eglCreateContext((EGLDisplay) display, ecfg, EGL_NO_CONTEXT, ctxattr);
         assert(surface != EGL_NO_CONTEXT);
-        printf("INFO: Created context for display\n");
-        frame=0;
+        printf("CLIENT: INFO: Created context for display\n");
     };
     void render() {
             assert(eglMakeCurrent((EGLDisplay) display, surface, surface, context) == EGL_TRUE);
-            printf("INFO: Made context and surface current for display\n");
             glViewport ( 0 , 0 , 1280, 720);
-            printf("client frame %i\n", frame++);
-            glClearColor ( 1.00 , (frame & 1) * 1.0f , ((float)(frame % 255))/255.0f, 1.);    // background color
+            printf("CLIENT: client frame %i\n", frame++);
+            glClearColor ( 1.00 , (frame & 8) * 1.0f , ((float)(frame % 255))/255.0f, 1.);    // background color
             glClear(GL_COLOR_BUFFER_BIT);
             eglSwapBuffers(display, surface);
-            printf("client swapped\n");
+            printf("CLIENT: client swapped\n");
     }
+    int pipe_write;
+    int pipe_read;
     int frame;
     EGLDisplay display;
     EGLContext context;
@@ -180,7 +189,10 @@ public:
 
 class EGLCompositor {
 public:
-    EGLCompositor() {
+    EGLCompositor(int pipe_read, int pipe_write)
+        : pipe_read(pipe_read)
+        , pipe_write(pipe_write)
+        , frame(0) {
         EGLConfig ecfg;
         EGLint num_config;
         EGLint attr[] = {       // some attributes to set up our egl-interface
@@ -195,109 +207,105 @@ public:
         };
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         if (display == EGL_NO_DISPLAY) {
-            printf("ERROR: Could not get default display\n");
+            printf("COMPOSITOR: ERROR: Could not get default display\n");
             return;
         }
 
-        printf("INFO: Successfully retrieved default display!\n");
+        printf("COMPOSITOR: INFO: Successfully retrieved default display!\n");
 
         eglInitialize(display, 0, 0);
         eglChooseConfig((EGLDisplay) display, attr, &ecfg, 1, &num_config);
 
-        printf("INFO: Initialized display with default configuration\n");
+        printf("COMPOSITOR: INFO: Initialized display with default configuration\n");
 
         window = new FbDevNativeWindow();
-        printf("INFO: Created native window %p\n", window);
-        printf("creating window surface...\n");
+        printf("COMPOSITOR: INFO: Created native window %p\n", window);
+        printf("COMPOSITOR: creating window surface...\n");
         surface = eglCreateWindowSurface((EGLDisplay) display, ecfg, *window, NULL);
         assert(surface != EGL_NO_SURFACE);
-        printf("INFO: Created our main window surface %p\n", surface);
+        printf("COMPOSITOR: INFO: Created our main window surface %p\n", surface);
         context = eglCreateContext((EGLDisplay) display, ecfg, EGL_NO_CONTEXT, ctxattr);
         assert(surface != EGL_NO_CONTEXT);
-        printf("INFO: Created context for display\n");
+        printf("COMPOSITOR: INFO: Created context for display\n");
         assert(eglMakeCurrent((EGLDisplay) display, surface, surface, context) == EGL_TRUE);
-        printf("INFO: Made context and surface current for display\n");
-        frame=0;
+        printf("COMPOSITOR: INFO: Made context and surface current for display\n");
         glGenTextures(1, &texture);
         
         gProgram = createProgram(gVertexShader, gFragmentShader);
         if (!gProgram) {
-            printf("no program\n");
+            printf("COMPOSITOR: no program\n");
             abort();
         }
-        gvPositionHandle = glGetAttribLocation(gProgram, "vPosition");
-        checkGlError("glGetAttribLocation");
-        fprintf(stderr, "glGetAttribLocation(\"vPosition\") = %d\n",
+        gvPositionHandle = glGetAttribLocation(gProgram, "COMPOSITOR: vPosition");
+        checkGlError("COMPOSITOR: glGetAttribLocation");
+        fprintf(stderr, "COMPOSITOR: glGetAttribLocation(\"vPosition\") = %d\n",
                 gvPositionHandle);
-        gYuvTexSamplerHandle = glGetUniformLocation(gProgram, "yuvTexSampler");
-        checkGlError("glGetUniformLocation");
-        fprintf(stderr, "glGetUniformLocation(\"yuvTexSampler\") = %d\n",
+        gYuvTexSamplerHandle = glGetUniformLocation(gProgram, "COMPOSITOR: yuvTexSampler");
+        checkGlError("COMPOSITOR: glGetUniformLocation");
+        fprintf(stderr, "COMPOSITOR: glGetUniformLocation(\"yuvTexSampler\") = %d\n",
                 gYuvTexSamplerHandle);
 
         glViewport(0, 0, 1280, 720);
-        checkGlError("glViewport");
+        checkGlError("COMPOSITOR: glViewport");
 
     };
-    void render(OffscreenNativeWindow* window) {
+    void render() {
+            int err;
             assert(eglMakeCurrent((EGLDisplay) display, surface, surface, context) == EGL_TRUE);
-            printf("INFO: Made context and surface current for display\n");
-
-
-            EGLClientBuffer cbuf = (EGLClientBuffer) window->getFrontBuffer();
+            char temp[64];
+            int count = read(pipe_read, temp, 64);
+            OffscreenNativeWindowBuffer buffer(temp);
+            write(pipe_write, &count, sizeof(count));
+            
             EGLint attrs[] = {
                 EGL_IMAGE_PRESERVED_KHR,    EGL_TRUE,
                 EGL_NONE,
             };
-            EGLImageKHR image = eglCreateImageKHR(display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, cbuf, attrs);
+            buffer.lock(GRALLOC_USAGE_HW_TEXTURE);
+            EGLImageKHR image = eglCreateImageKHR(display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, (ANativeWindowBuffer*)&buffer, attrs); // is this cast correct? segfaults!
             if (image == EGL_NO_IMAGE_KHR) {
                 EGLint error = eglGetError();
-                printf("error creating EGLImage: %#x", error);
+                printf("\n\nCOMPOSITOR: error creating EGLImage: %#x\n\n", error);
+                abort();
             }
-            printf("got egl image %p\n", image);
+            printf("COMPOSITOR: got egl image %p\n", image);
 
             glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture);
-            int err;
-            if(err = glGetError()) printf("%i gl error %x\n", __LINE__, err);
+            if(err = glGetError()) printf("COMPOSITOR: %i gl error %x\n", __LINE__, err);
             glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, (GLeglImageOES)image);
-            if(err = glGetError()) printf("%i gl error %x\n", __LINE__, err);
-            glEnable(GL_TEXTURE_EXTERNAL_OES);
-            if(err = glGetError()) printf("%i gl error %x\n", __LINE__, err);
+            if(err = glGetError()) printf("COMPOSITOR: %i gl error %x\n", __LINE__, err);
 
 
 
             glViewport ( 0 , 0 , 1280, 720);
-            printf("compositor frame %i\n", frame++);
+            printf("COMPOSITOR: compositor frame %i\n", frame++);
             float c = (frame % 64) / 64.0f;
             glClearColor ( c , c , c, 1.);    // background color
-    checkGlError("glClearColor");
 
-
-    glClear( GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
-    checkGlError("glClear");
-
-    glUseProgram(gProgram);
-    checkGlError("glUseProgram");
-
-    glVertexAttribPointer(gvPositionHandle, 2, GL_FLOAT, GL_FALSE, 0, gTriangleVertices);
-    checkGlError("glVertexAttribPointer");
-    glEnableVertexAttribArray(gvPositionHandle);
-    checkGlError("glEnableVertexAttribArray");
-
-    glUniform1i(gYuvTexSamplerHandle, 0);
-    checkGlError("glUniform1i");
-    glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture);
-    checkGlError("glBindTexture");
-
-    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-    checkGlError("glDrawArrays");
-
-
+            checkGlError("COMPOSITOR: glClearColor");
+            glClear( GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+            checkGlError("COMPOSITOR: glClear");
+            glUseProgram(gProgram);
+            checkGlError("COMPOSITOR: glUseProgram");
+            glVertexAttribPointer(gvPositionHandle, 2, GL_FLOAT, GL_FALSE, 0, gTriangleVertices);
+            checkGlError("COMPOSITOR: glVertexAttribPointer");
+            glEnableVertexAttribArray(gvPositionHandle);
+            checkGlError("COMPOSITOR: glEnableVertexAttribArray");
+            glUniform1i(gYuvTexSamplerHandle, 0);
+            checkGlError("COMPOSITOR: glUniform1i");
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture);
+            checkGlError("COMPOSITOR: glBindTexture");
+            glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+            checkGlError("COMPOSITOR: glDrawArrays");
 
             eglSwapBuffers(display, surface);
             eglDestroyImageKHR(display, image);
-            printf("compositor swapped\n");
+            buffer.unlock();
+            printf("COMPOSITOR: compositor swapped\n");
     }
     int frame;
+    int pipe_read;
+    int pipe_write;
     EGLDisplay display;
     EGLContext context;
     EGLSurface surface;
@@ -306,17 +314,32 @@ public:
     EGLImageKHR image;
 };
 
+#define READ_END 0
+#define WRITE_END 1
+
 int main(int argc, char **argv)
 {
-    EGLCompositor compositor;
-    eglCreateImageKHR = (PFNEGLCREATEIMAGEKHRPROC) eglGetProcAddress("eglCreateImageKHR");
-    eglDestroyImageKHR = (PFNEGLDESTROYIMAGEKHRPROC) eglGetProcAddress("eglDestroyImageKHR");
-    glEGLImageTargetTexture2DOES = (PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) eglGetProcAddress("glEGLImageTargetTexture2DOES");
-
-    
-    EGLClient client;
-    while(1) {
-        client.render();
-        compositor.render(client.window);
+    int pipe1[2];
+    pipe(pipe1);
+    int pipe2[2];
+    pipe(pipe2);
+    int pid = fork();
+    if(pid) {
+        printf("COMPOSITOR STARTUP\n");
+        EGLCompositor compositor(pipe1[READ_END], pipe2[WRITE_END]);
+        eglCreateImageKHR = (PFNEGLCREATEIMAGEKHRPROC) eglGetProcAddress("eglCreateImageKHR");
+        eglDestroyImageKHR = (PFNEGLDESTROYIMAGEKHRPROC) eglGetProcAddress("eglDestroyImageKHR");
+        glEGLImageTargetTexture2DOES = (PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) eglGetProcAddress("glEGLImageTargetTexture2DOES");
+        while(1) {
+            printf("COMPOSITOR render loop >>> ##########################################################33333#########################################\n");
+            compositor.render();
+        }
+    } else {
+        printf("CLIENT STARTUP\n");
+        EGLClient client(pipe2[READ_END], pipe1[WRITE_END]);
+        while(1) {
+            printf("CLIENT RENDER LOOP >>> +=====++++++++++++++++++++++++++++++++++++++++++++++++++++++++++=====+++++++++++++++++++++++++++++++++++\n");
+            client.render();
+        }
     }
 }
