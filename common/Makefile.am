@@ -8,7 +8,9 @@ ARCHFLAGS = -DHAVE_ARM_TLS_REGISTER -DANDROID_ARM_LINKER
 libhybris_common_la_SOURCES = \
 	hooks.c \
 	properties.c \
-	strlcpy.c
+	strlcpy.c \
+	android_native_window_base.cpp \
+	fbdev_window.cpp
 libhybris_common_la_SOURCES += \
 	gingerbread/dlfcn.c \
 	gingerbread/linker.c \
