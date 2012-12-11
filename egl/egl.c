@@ -220,7 +220,8 @@ EGLSurface eglCreateWindowSurface(EGLDisplay dpy, EGLConfig config,
 {
 	EGL_DLSYM(&_eglCreateWindowSurface, "eglCreateWindowSurface");
 
-	win = ws_CreateWindow(win,  _egldisplay2NDT(dpy));
+	if (win == NULL)
+		win = ws_CreateWindow(win,  _egldisplay2NDT(dpy));
 	return (*_eglCreateWindowSurface)(dpy, config, win, attrib_list);
 }
 
