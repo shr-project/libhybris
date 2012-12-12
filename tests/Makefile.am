@@ -22,12 +22,10 @@ test_glesv2_LDADD = \
 test_offscreen_rendering_SOURCES = \
 	test_offscreen_rendering.cpp \
 	fbdev_window.cpp \
-	nativewindowbase.cpp \
-	offscreen_window.cpp \
-	fdpass.c \
-	native_handle.c
+	nativewindowbase.cpp
 test_offscreen_rendering_CXXFLAGS = \
-	-I$(top_srcdir)/include
+	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/egl
 test_offscreen_rendering_CFLAGS = \
 	-I$(top_srcdir)/include
 test_offscreen_rendering_LDADD = \
