@@ -37,8 +37,6 @@ static int my_pthread_mutex_init (pthread_mutex_t *__mutex, __const pthread_mute
 	pthread_mutex_t *realmutex = malloc(sizeof(pthread_mutex_t));
 	*((int *)__mutex) = (int) realmutex;
 
-	printf("init %x\n", __mutex);
-
 	return pthread_mutex_init(realmutex, __mutexattr);
 }
 
@@ -290,7 +288,6 @@ void *get_hooked_symbol(char *sym)
 
 	if (strstr(sym, "pthread") != NULL) {
 		counter--;
-		printf("%s %i\n", sym, counter);
 		return (void *) counter;
 	}
 
