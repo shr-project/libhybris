@@ -26,6 +26,7 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <errno.h>
+#include <time.h>
 
 struct _hook {
 	const char *name;
@@ -47,10 +48,31 @@ static int my_pthread_mutex_lock (pthread_mutex_t *__mutex)
 	pthread_mutex_t *realmutex = (pthread_mutex_t *) *(int *) __mutex;
 
 	if (realmutex == NULL) {
+#if 0
 		realmutex = malloc(sizeof(pthread_mutex_t));
 		*((int *)__mutex) = (int) realmutex;
 		pthread_mutex_init(realmutex, NULL);
+#endif
+		my_pthread_mutex_init(__mutex, NULL);
 	}
+	else if(realmutex == 0x4000) /* recursive static initializer */
+	{
+		printf("RECURSIVE STATIC MUTEX: %x (value = %x)\n", __mutex, *(int **)__mutex);
+		pthread_mutexattr_t my_recursive_mutexattr;
+		pthread_mutexattr_init(&my_recursive_mutexattr);
+		pthread_mutexattr_settype(&my_recursive_mutexattr, PTHREAD_MUTEX_RECURSIVE_NP);
+		my_pthread_mutex_init(__mutex, &my_recursive_mutexattr);
+	}
+	else if(realmutex == 0x8000) /* errorcheck static initializer */
+	{
+		printf("ERRORCHECK STATIC MUTEX: %x (value = %x)\n", __mutex, *(int **)__mutex);
+		pthread_mutexattr_t my_recursive_mutexattr;
+		pthread_mutexattr_init(&my_recursive_mutexattr);
+		pthread_mutexattr_settype(&my_recursive_mutexattr, PTHREAD_MUTEX_ERRORCHECK_NP);
+		my_pthread_mutex_init(__mutex, &my_recursive_mutexattr);
+	}
+
+	realmutex = (pthread_mutex_t *) *(int *) __mutex;
 
 	return pthread_mutex_lock(realmutex);
 }
@@ -131,6 +153,22 @@ static int my_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mute
 	pthread_mutex_t *realmutex = (pthread_mutex_t *) *(int *) mutex;
 
 	return pthread_cond_timedwait(realcond, realmutex, abstime);
+}
+
+static int my_pthread_cond_timedwait_relative_np(pthread_cond_t *cond, pthread_mutex_t *mutex, const struct timespec *reltime)
+{
+	pthread_cond_t *realcond = (pthread_cond_t *) *(int *) cond;
+	pthread_mutex_t *realmutex = (pthread_mutex_t *) *(int *) mutex;
+
+	struct timespec then;
+	clock_gettime (CLOCK_REALTIME, &then);
+	if(reltime) {
+		then.tv_sec += reltime->tv_sec;
+		then.tv_nsec += reltime->tv_nsec;
+		return pthread_cond_timedwait(realcond, realmutex, &then);
+	}
+
+	return pthread_cond_timedwait(realcond, realmutex, NULL);
 }
 
 static int my_pthread_attr_destroy(pthread_attr_t *__attr)
@@ -244,6 +282,7 @@ static struct _hook hooks[] = {
 	{ "pthread_mutex_destroy", my_pthread_mutex_destroy },
 	{ "pthread_once", pthread_once },
 	{ "pthread_mutexattr_init", pthread_mutexattr_init },
+	{ "pthread_mutexattr_setpshared", pthread_mutexattr_setpshared },
 	{ "pthread_mutexattr_settype", pthread_mutexattr_settype },
 	{ "pthread_mutexattr_destroy", pthread_mutexattr_destroy },
 	{ "pthread_mutex_trylock", my_pthread_mutex_trylock },
@@ -259,6 +298,11 @@ static struct _hook hooks[] = {
 	{ "pthread_cond_signal", my_pthread_cond_signal },
 	{ "pthread_cond_wait", my_pthread_cond_wait },
 	{ "pthread_cond_timedwait", my_pthread_cond_timedwait },
+	{ "pthread_cond_timedwait_relative_np", my_pthread_cond_timedwait_relative_np },
+	{ "pthread_condattr_init", pthread_condattr_init },
+	{ "pthread_condattr_getpshared", pthread_condattr_getpshared },
+	{ "pthread_condattr_setpshared", pthread_condattr_setpshared },
+	{ "pthread_condattr_destroy", pthread_condattr_destroy },
 	{ "pthread_attr_setstacksize", my_pthread_attr_setstacksize },
 	{ "pthread_attr_destroy", my_pthread_attr_destroy },
 	{ "pthread_attr_setdetachstate", my_pthread_attr_setdetachstate },
